@@ -76,7 +76,7 @@ namespace ConfigManiac
             switch(type)
             {
                 case 0:
-                    gameconfig = new RSDKv5.GameConfig(new RSDKv5.Reader(Filepath));
+                    gameconfig = new RSDKv5.GameConfig(new RSDKv5.Reader(Filepath), true);
                     break;
                 case 1:
                     stageconfig = new RSDKv5.StageConfig(new RSDKv5.Reader(Filepath));
@@ -632,7 +632,7 @@ namespace ConfigManiac
         {
             if (gameconfig.Categories.Count > 0)
             {
-                gameconfig.Categories.RemoveAt(CurSfx);
+                gameconfig.Categories.RemoveAt(CurCategory);
                 if (CurCategory > 0) CurCategory--;
                 CurStage = 0;
                 RefreshUI();
