@@ -41,7 +41,7 @@
             this.label1.Name = "label1";
             this.label1.Size = new System.Drawing.Size(319, 39);
             this.label1.TabIndex = 0;
-            this.label1.Text = "ConfigManiac - v1.0";
+            this.label1.Text = "ConfigManiac - v1.1";
             // 
             // label2
             // 
