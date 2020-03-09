@@ -14,23 +14,18 @@ namespace ConfigManiac
 {
     public partial class MainForm : Form
     {
-        public RSDKv5.GameConfig gameconfig = new RSDKv5.GameConfig();
-        public RSDKv5.StageConfig stageconfig = new RSDKv5.StageConfig();
+        public RSDKv5.RSDKConfig rsdkconfig = new RSDKv5.RSDKConfig();
+        public RSDKv5.Gameconfig rsdkgameconfig = new RSDKv5.Gameconfig();
+
+        public RSDKv5.Gameconfig gameconfig = new RSDKv5.Gameconfig();
+        public RSDKv5.Stageconfig stageconfig = new RSDKv5.Stageconfig();
 
         int type = 0;
         public string TypeStr
         {
             get
             {
-                if (type == 0)
-                {
-                    return "Gameconfig";
-                }
-                else if (type == 1)
-                {
-                    return "Stageconfig";
-                }
-                return "";
+                return type < 1 ? "Gameconfig" : type > 1 ? "RSDKConfig" : "Stageconfig";
             }
         }
 
@@ -39,9 +34,12 @@ namespace ConfigManiac
         public int CurObj = 0;
         public int CurSfx = 0;
 
+        public int CurVar = 0;
+        public int CurEntry= 0;
+
         public List<string> ActNumList = new List<string>();
 
-        string FILEPATH;
+        string Filepath;
 
         public MainForm()
         {
@@ -60,13 +58,13 @@ namespace ConfigManiac
             switch(type)
             {
                 case 0:
-                    gameconfig = new RSDKv5.GameConfig();
+                    gameconfig = new RSDKv5.Gameconfig();
                     break;
                 case 1:
-                    stageconfig = new RSDKv5.StageConfig();
+                    stageconfig = new RSDKv5.Stageconfig();
                     break;
             }
-            FILEPATH = null;
+            Filepath = null;
             refreshLists();
             RefreshUI();
         }
@@ -76,23 +74,39 @@ namespace ConfigManiac
             switch(type)
             {
                 case 0:
-                    gameconfig = new RSDKv5.GameConfig(new RSDKv5.Reader(Filepath), true);
+                    gameconfig = new RSDKv5.Gameconfig(new RSDKv5.Reader(Filepath), true);
                     break;
                 case 1:
-                    stageconfig = new RSDKv5.StageConfig(new RSDKv5.Reader(Filepath));
+                    stageconfig = new RSDKv5.Stageconfig(new RSDKv5.Reader(Filepath));
+                    break;
+                case 2:
+                    rsdkconfig = new RSDKv5.RSDKConfig(new RSDKv5.Reader(Filepath));
+                    rsdkgameconfig = new RSDKv5.Gameconfig(new RSDKv5.Reader(Filepath.Replace(Path.GetFileName(Filepath), "Gameconfig.bin")), true);
+                    if (rsdkconfig.Variables.Count != rsdkgameconfig.ConfigMemory.Count)
+                    {
+                        MessageBox.Show("Variable Counts not Equal! Do you have a bad gameconfig?" + Environment.NewLine + "Gameconfig Variable Count: " + rsdkgameconfig.ConfigMemory.Count + Environment.NewLine + "RSDKconfig Variable Count: " + rsdkconfig.Variables.Count);
+                        while(rsdkgameconfig.ConfigMemory.Count < rsdkconfig.Variables.Count)
+                        {
+                            rsdkgameconfig.ConfigMemory.Add(new RSDKv5.Gameconfig.ConfigurableMemoryEntry());
+                        }
+                        while (rsdkconfig.Variables.Count < rsdkgameconfig.ConfigMemory.Count)
+                        {
+                            rsdkconfig.Variables.Add(new RSDKv5.RSDKConfig.Variable("Unknown Variable", "int", "-"));
+                        }
+                    }
                     break;
                 default:
                     break;
             }
             this.type = type;
-            FILEPATH = Filepath;
+            this.Filepath = Filepath;
             refreshLists();
             RefreshUI();
         }
 
         public void Save(string Filepath, int type)
         {
-            Console.WriteLine(FILEPATH);
+            Console.WriteLine(Filepath);
             switch (type)
             {
                 case 0:
@@ -101,25 +115,64 @@ namespace ConfigManiac
                 case 1:
                     stageconfig.Write(new RSDKv5.Writer(Filepath));
                     break;
+                case 2:
+                    handleRSDKConfigWrite(Filepath);
+                    break;
                 default:
                     break;
             }
             this.type = type;
-            FILEPATH = Filepath;
+            this.Filepath = Filepath;
         }
 
-        public string DecToHex(int DecVal)
+        //recreate the config memory section of the gameconfig based on the rsdk config
+        private void handleRSDKConfigWrite(string Filepath)
         {
-            string HEXOUT = "";// Define String?
-            HEXOUT = System.String.Format("{0:x}", DecVal);//Convert Dec to Hex
-            return HEXOUT;
+            rsdkgameconfig.ConfigMemory.Clear();
+
+            int offset = 0;
+
+            for (int i = 0; i < rsdkconfig.Variables.Count; i++)
+            {
+                int size = 1;
+
+                if (rsdkconfig.Variables[i].Name.Contains("[") && rsdkconfig.Variables[i].Name.Contains("]"))
+                {
+                    string Size = rsdkconfig.Variables[i].Name.Split('[')[1].Split(']')[0];
+
+                    try
+                    {
+                        size = int.Parse(Size);
+                    }
+                    catch {
+                        //fuck
+                        size = 1;
+                    }
+                }
+
+                RSDKv5.Gameconfig.ConfigurableMemoryEntry configMemory = new RSDKv5.Gameconfig.ConfigurableMemoryEntry();
+
+                configMemory.Index = offset;
+
+                if (rsdkconfig.Variables[i].Value != "-")
+                {
+                    configMemory.Data.Add(int.Parse(rsdkconfig.Variables[i].Value));
+                }
+
+                rsdkgameconfig.ConfigMemory.Add(configMemory);
+
+                offset += size;
+            }
+
+            rsdkconfig.Write(new RSDKv5.Writer(Filepath));
+            rsdkgameconfig.Write(new RSDKv5.Writer(Filepath.Replace(Path.GetFileName(Filepath), "Gameconfig.bin")));
         }
 
         private void saveToolStripMenuItem_Click(object sender, EventArgs e)
         {
-            if (FILEPATH != null)
+            if (Filepath != null)
             {
-                Save(FILEPATH,type);
+                Save(Filepath,type);
             }
             else
             {
@@ -145,7 +198,7 @@ namespace ConfigManiac
                     if (dlg.ShowDialog(this) == DialogResult.OK)
                     {
                         writeLineToConsole(dlg.FileName);
-                        FILEPATH = dlg.FileName;
+                        Filepath = dlg.FileName;
                         Open(dlg.FileName, ConfigManager.SelectedIndex);
                     }
                     break;
@@ -154,7 +207,16 @@ namespace ConfigManiac
                     if (dlg.ShowDialog(this) == DialogResult.OK)
                     {
                         writeLineToConsole(dlg.FileName);
-                        FILEPATH = dlg.FileName;
+                        Filepath = dlg.FileName;
+                        Open(dlg.FileName, ConfigManager.SelectedIndex);
+                    }
+                    break;
+                case 2:
+                    dlg.Filter = "RSDKv5 RSDKConfig Files|RSDKConfig*.bin";
+                    if (dlg.ShowDialog(this) == DialogResult.OK)
+                    {
+                        writeLineToConsole(dlg.FileName);
+                        Filepath = dlg.FileName;
                         Open(dlg.FileName, ConfigManager.SelectedIndex);
                     }
                     break;
@@ -173,6 +235,9 @@ namespace ConfigManiac
                     break;
                 case 1:
                     dlg.Filter = "RSDKv5 Stageconfig Files|Stageconfig*.bin";
+                    break;
+                case 2:
+                    dlg.Filter = "RSDKv5 RSDKConfig Files|RSDKConfig*.bin";
                     break;
                 default:
                     break;
@@ -234,6 +299,7 @@ namespace ConfigManiac
 
         public void RefreshUI()
         {
+            //GAMECONFIG
             GameNameTxt.Text = gameconfig.GameName;
             SubNameTxt.Text = gameconfig.GameSubname;
             VersionBox.Text = gameconfig.Version;
@@ -274,6 +340,7 @@ namespace ConfigManiac
             }
 
 
+            //STAGECONFIG
             if (stageconfig.ObjectsNames.Count > 0)
             {
                 SCObjectNameBox.Text = stageconfig.ObjectsNames[CurObj];
@@ -286,6 +353,31 @@ namespace ConfigManiac
             }
 
             LoadGlobalObjectsCB.Checked = stageconfig.LoadGlobalObjects;
+
+            //RSDKCONFIG
+            if (CurVar >= 0 && CurVar < rsdkconfig.Variables.Count && CurVar < rsdkgameconfig.ConfigMemory.Count)
+            {
+                VarNameBox.Text = rsdkconfig.Variables[CurVar].Name;
+                VarTypeBox.Text = rsdkconfig.Variables[CurVar].Type;
+                VarValueBox.Text = rsdkconfig.Variables[CurVar].Value;
+
+                //CMemIndexNUD.Value = rsdkgameconfig.ConfigMemory[CurVar].Index;
+                if (CurEntry >= 0 && CurEntry < rsdkgameconfig.ConfigMemory[CurVar].Data.Count)
+                {
+                    CMemValueNUD.Value = rsdkgameconfig.ConfigMemory[CurVar].Data[CurEntry];
+                }
+                else
+                {
+                    CMemValueNUD.Value = 0;
+                }
+            }
+            else
+            {
+                VarNameBox.Text = "";
+                VarTypeBox.Text = "";
+                VarValueBox.Text = "";
+                CMemValueNUD.Value = 0;
+            }
         }
 
         void refreshStageList()
@@ -339,12 +431,39 @@ namespace ConfigManiac
             }
         }
 
+        void refreshVariableList()
+        {
+            VarListBox.Items.Clear();
+            if (rsdkconfig.Variables.Count > 0)
+            {
+                for (int i = 0; i < rsdkconfig.Variables.Count; i++)
+                {
+                    VarListBox.Items.Add(rsdkconfig.Variables[i].Name);
+                }
+            }
+        }
+
+        void refreshCMemEntryList()
+        {
+            CMemEntryBox.Items.Clear();
+            if (CurVar >= rsdkgameconfig.ConfigMemory.Count)
+            {
+                return;
+            }
+            for (int i = 0; i < rsdkgameconfig.ConfigMemory[CurVar].Data.Count; i++)
+            {
+                CMemEntryBox.Items.Add(rsdkgameconfig.ConfigMemory[CurVar].Data[i]);
+            }
+        }
+
         void refreshLists()
         {
             refreshObjectList();
             refreshStageList();
             refreshCategoryList();
             refreshSoundFXList();
+            refreshVariableList();
+            refreshCMemEntryList();
         }
 
         private void CategoryListBox_SelectedIndexChanged(object sender, EventArgs e)
@@ -412,7 +531,7 @@ namespace ConfigManiac
 
         private void AddStgButton_Click(object sender, EventArgs e)
         {
-            gameconfig.Categories[CurCategory].Scenes.Add(new RSDKv5.GameConfig.SceneInfo());
+            gameconfig.Categories[CurCategory].Scenes.Add(new RSDKv5.Gameconfig.SceneInfo());
             RefreshUI();
             refreshLists();
         }
@@ -430,8 +549,8 @@ namespace ConfigManiac
 
         private void ClearStgButton_Click(object sender, EventArgs e)
         {
-            gameconfig.Categories[CurCategory].Scenes = new List<RSDKv5.GameConfig.SceneInfo>();
-            gameconfig.Categories[CurCategory].Scenes.Add(new RSDKv5.GameConfig.SceneInfo());
+            gameconfig.Categories[CurCategory].Scenes = new List<RSDKv5.Gameconfig.SceneInfo>();
+            gameconfig.Categories[CurCategory].Scenes.Add(new RSDKv5.Gameconfig.SceneInfo());
             CurStage = 0;
             RefreshUI();
             refreshLists();
@@ -623,7 +742,7 @@ namespace ConfigManiac
 
         private void AddCatButton_Click(object sender, EventArgs e)
         {
-            gameconfig.Categories.Add(new RSDKv5.GameConfig.Category(gameconfig._scenesHaveModeFilter));
+            gameconfig.Categories.Add(new RSDKv5.Gameconfig.Category(gameconfig._scenesHaveModeFilter));
             RefreshUI();
             refreshLists();
         }
@@ -642,8 +761,8 @@ namespace ConfigManiac
 
         private void ClearCatButton_Click(object sender, EventArgs e)
         {
-            gameconfig.Categories = new List<RSDKv5.GameConfig.Category>();
-            gameconfig.Categories.Add(new RSDKv5.GameConfig.Category());
+            gameconfig.Categories = new List<RSDKv5.Gameconfig.Category>();
+            gameconfig.Categories.Add(new RSDKv5.Gameconfig.Category());
             CurStage = 0;
             CurCategory = 0;
             RefreshUI();
@@ -654,6 +773,119 @@ namespace ConfigManiac
         {
             AboutForm dlg = new AboutForm();
             dlg.ShowDialog();
+        }
+
+        private void VarNameBox_TextChanged(object sender, EventArgs e)
+        {
+            rsdkconfig.Variables[CurVar].Name = VarNameBox.Text;
+            VarListBox.Items[CurVar] = VarNameBox.Text;
+        }
+
+        private void VarTypeBox_TextChanged(object sender, EventArgs e)
+        {
+            rsdkconfig.Variables[CurVar].Type = VarTypeBox.Text;
+        }
+
+        private void VarValueBox_TextChanged(object sender, EventArgs e)
+        {
+            rsdkconfig.Variables[CurVar].Value = VarValueBox.Text;
+        }
+
+        private void CMemIndexNUD_ValueChanged(object sender, EventArgs e)
+        {
+            //rsdkgameconfig.ConfigMemory[CurVar].Index = (uint)CMemIndexNUD.Value;
+        }
+
+        private void CMemValueNUD_ValueChanged(object sender, EventArgs e)
+        {
+            if (CurEntry >= 0 && CurEntry < rsdkgameconfig.ConfigMemory[CurVar].Data.Count)
+            {
+                rsdkgameconfig.ConfigMemory[CurVar].Data[CurEntry] = (int)CMemValueNUD.Value;
+
+                if (CurEntry < CMemEntryBox.Items.Count)
+                CMemEntryBox.Items[CurEntry] = (uint)CMemValueNUD.Value;
+            }
+        }
+
+        private void VarListBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (VarListBox.SelectedIndex < 0)
+            {
+                CurVar = 0;
+            }
+            else
+            {
+                CurVar = VarListBox.SelectedIndex;
+            }
+            CurEntry = 0;
+            RefreshUI();
+            refreshCMemEntryList();
+        }
+
+        private void CMemEntryBox_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (CMemEntryBox.SelectedIndex < 0)
+            {
+                CurEntry = 0;
+            }
+            else
+            {
+                CurEntry = CMemEntryBox.SelectedIndex;
+            }
+            RefreshUI();
+        }
+
+        private void AddVarButton_Click(object sender, EventArgs e)
+        {
+            rsdkconfig.Variables.Add(new RSDKv5.RSDKConfig.Variable());
+            rsdkgameconfig.ConfigMemory.Add(new RSDKv5.Gameconfig.ConfigurableMemoryEntry());
+            RefreshUI();
+            refreshLists();
+        }
+
+        private void DelVarButton_Click(object sender, EventArgs e)
+        {
+            rsdkconfig.Variables.RemoveAt(CurVar);
+            rsdkgameconfig.ConfigMemory.RemoveAt(CurVar);
+            CurEntry = 0;
+            RefreshUI();
+            refreshLists();
+        }
+
+        private void ClearVarButton_Click(object sender, EventArgs e)
+        {
+            rsdkgameconfig.ConfigMemory.RemoveAt(CurVar);
+            rsdkconfig.Variables.RemoveAt(CurVar);
+            CurEntry = 0;
+            RefreshUI();
+            refreshLists();
+        }
+
+        private void AddEntryButton_Click(object sender, EventArgs e)
+        {
+            rsdkgameconfig.ConfigMemory[CurVar].Data.Add(0);
+            RefreshUI();
+            refreshLists();
+        }
+
+        private void DelEntryButton_Click(object sender, EventArgs e)
+        {
+            rsdkgameconfig.ConfigMemory[CurVar].Data.RemoveAt(CurEntry);
+            RefreshUI();
+            refreshLists();
+        }
+
+        private void ClearEntryButton_Click(object sender, EventArgs e)
+        {
+            rsdkgameconfig.ConfigMemory[CurVar].Data.Clear();
+            CurEntry = 0;
+            RefreshUI();
+            refreshLists();
+        }
+
+        private void GroupBox12_Enter(object sender, EventArgs e)
+        {
+
         }
     }   
 }
